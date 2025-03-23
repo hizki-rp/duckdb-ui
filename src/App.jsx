@@ -10,7 +10,9 @@ function App() {
 				// Initialize DuckDB-WASM
 				const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
 				const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
-				const worker = new Worker(bundle.mainWorker);
+
+				const worker = new Worker("/duckdb-browser-eh.worker.js");
+
 				const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
 				await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
