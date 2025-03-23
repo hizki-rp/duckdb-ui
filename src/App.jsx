@@ -1,70 +1,81 @@
-import { useEffect, useState } from 'react';
-import { initDuckDB } from './utils/duckdb';
-import Table from './components/Table';
+import React, { useEffect, useState } from "react";
+import * as duckdb from "@duckdb/duckdb-wasm";
 
 function App() {
-  const [columns, setColumns] = useState([]);
-  const [stats, setStats] = useState({});
-  const [tableData, setTableData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+	const [data, setData] = useState([]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const db = await initDuckDB();
-        const conn = await db.connect();
+	useEffect(() => {
+		async function loadData() {
+			try {
+				// Initialize DuckDB-WASM
+				const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+				const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+				const worker = new Worker(bundle.mainWorker);
+				const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+				await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
-        // Create sample table
-        await conn.query(`
-          CREATE TABLE sample_table AS
-          SELECT * FROM (VALUES
-            (1, 'Alice', 25.5, TRUE),
-            (2, 'Bob', 30.0, FALSE),
-            (3, 'Charlie', 35.2, TRUE)
-          ) AS t(id, name, age, is_active);
-        `);
+				// Connect to the database
+				const conn = await db.connect();
 
-        // Get column types
-        const columnInfo = await conn.query('PRAGMA table_info(sample_table);');
-        setColumns(columnInfo.toArray());
+				// Load the Parquet file from the remote URL
+				await conn.query(
+					`CREATE TABLE house_prices AS SELECT * FROM parquet_scan('https://www.tablab.app/sample-datasets/house-price.parquet')`
+				);
 
-        // Get statistics
-        const statsResult = await conn.query(`
-          SELECT
-            COUNT(*) AS row_count,
-            MIN(age) AS min_age,
-            MAX(age) AS max_age,
-            AVG(age) AS avg_age,
-            COUNT(DISTINCT name) AS distinct_names
-          FROM sample_table;
-        `);
-        setStats(statsResult.toArray()[0]);
+				// Query the data
+				const result = await conn.query("SELECT * FROM house_prices LIMIT 10");
+				setData(result.toArray());
 
-        // Fetch table data
-        const data = await conn.query('SELECT * FROM sample_table;');
-        setTableData(data.toArray());
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+				// Clean up
+				await conn.close();
+			} catch (error) {
+				console.error("Error loading data:", error);
+			}
+		}
 
-  if (loading) {
-    return <p className="p-4">Loading...</p>;
-  }
+		loadData();
+	}, []);
 
-  if (error) {
-    return <p className="p-4 text-red-500">Error: {error}</p>;
-  }
-
-  return (
-    <div>
-      <Table columns={columns} tableData={tableData} stats={stats} />
-    </div>
-  );
+	return (
+		<div className="min-h-screen bg-gray-100 p-8">
+			<div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
+				<h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
+					House Price Data Analysis
+				</h1>
+				<div className="overflow-x-auto">
+					<table className="min-w-full bg-white border border-gray-200">
+						<thead className="bg-gray-50">
+							<tr>
+								{data.length > 0 &&
+									Object.keys(data[0]).map((key) => (
+										<th
+											key={key}
+											className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+										>
+											{key}
+										</th>
+									))}
+							</tr>
+						</thead>
+						<tbody className="divide-y divide-gray-200">
+							{data.map((row, index) => (
+								<tr key={index} className="hover:bg-gray-50 transition-colors">
+									{Object.values(row).map((value, i) => (
+										<td
+											key={i}
+											className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap"
+										>
+											{value}
+										</td>
+									))}
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	);
 }
 
 export default App;
